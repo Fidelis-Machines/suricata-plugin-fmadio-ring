@@ -27,7 +27,7 @@ const PKT_SRC_WIRE: u8 = 1;
 const LINKTYPE_ETHERNET: c_int = 1;
 
 // Thread flags (from threadvars.h)
-const THV_RUNNING: u32 = 1 << 4;
+const THV_RUNNING: u32 = 1 << 13;
 
 // External C wrapper functions (defined in source.c)
 // These wrap Suricata functions/macros/inline functions to make them

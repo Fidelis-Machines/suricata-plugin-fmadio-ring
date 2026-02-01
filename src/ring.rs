@@ -2,7 +2,6 @@
 // Copyright 2024-2025. Fidelis Machines, LLC
 // SPDX-License-Identifier: GPL-2.0-only
 //
-// Based on rockfish_probe fmadio_ring.rs implementation.
 // Reference: https://github.com/fmadio/platform/blob/main/fmadio2pcap/main.c
 // API: https://github.com/fmadio/platform/blob/main/include/fmadio_packet.h
 

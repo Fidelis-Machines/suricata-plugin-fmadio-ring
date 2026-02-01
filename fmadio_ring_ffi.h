@@ -151,6 +151,8 @@ extern void fmadio_stats_set_ui64(void *tv, uint16_t counter, uint64_t value);
 
 extern void fmadio_stats_sync_if_signalled(void *tv);
 
+extern void *fmadio_get_slot_next(void *slot);
+
 extern void fmadio_log_notice(const char *msg);
 
 extern void fmadio_log_error(const char *msg);
