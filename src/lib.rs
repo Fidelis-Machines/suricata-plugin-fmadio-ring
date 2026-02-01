@@ -54,6 +54,9 @@ extern "C" {
     fn fmadio_stats_set_ui64(tv: *mut c_void, counter: u16, value: u64);
     fn fmadio_stats_sync_if_signalled(tv: *mut c_void);
 
+    // Slot navigation
+    fn fmadio_get_slot_next(slot: *mut c_void) -> *mut c_void;
+
     // Logging
     fn fmadio_log_notice(msg: *const c_char);
     fn fmadio_log_error(msg: *const c_char);
@@ -63,12 +66,9 @@ extern "C" {
 }
 
 /// Helper to get next slot from TmSlot
-/// In Suricata's TmSlot structure, slot_next is at a known offset.
-/// We pass the slot through and let the C side handle the traversal.
+/// Uses C wrapper to access slot->slot_next safely.
 unsafe fn get_slot_next(slot: *mut c_void) -> *mut c_void {
-    // The C code passes us the TmSlot, and we pass it to TmThreadsSlotProcessPkt
-    // which internally handles slot traversal. We just use the same slot.
-    slot
+    fmadio_get_slot_next(slot)
 }
 
 /// Log a notice message

@@ -76,6 +76,15 @@ void fmadio_threads_set_flag(ThreadVars *tv, uint32_t flag)
     TmThreadsSetFlag(tv, flag);
 }
 
+/* Get the next slot in the pipeline (for passing to TmThreadsSlotProcessPkt) */
+TmSlot *fmadio_get_slot_next(TmSlot *slot)
+{
+    if (slot == NULL) {
+        return NULL;
+    }
+    return slot->slot_next;
+}
+
 int fmadio_slot_process_pkt(ThreadVars *tv, TmSlot *slot, Packet *p)
 {
     return TmThreadsSlotProcessPkt(tv, slot, p);
