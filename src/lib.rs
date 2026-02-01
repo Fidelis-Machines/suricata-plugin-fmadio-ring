@@ -230,6 +230,12 @@ pub extern "C" fn fmadio_pkt_acq_loop(
         fmadio_threads_set_flag(tv, THV_RUNNING);
     }
 
+    // Adaptive backoff: start at 0, increase when idle, reset on packet
+    const BACKOFF_MIN_US: u64 = 0;
+    const BACKOFF_MAX_US: u64 = 1000; // 1ms max
+    const BACKOFF_STEP_US: u64 = 100; // increase by 100us each idle iteration
+    let mut backoff_us: u64 = BACKOFF_MIN_US;
+
     // Main acquisition loop
     loop {
         // Check for shutdown signal
@@ -289,6 +295,9 @@ pub extern "C" fn fmadio_pkt_acq_loop(
                 ptv.pkts += 1;
                 ptv.bytes += recv_pkt.len as u64;
 
+                // Reset backoff when receiving packets
+                backoff_us = BACKOFF_MIN_US;
+
                 // Process packet through the pipeline
                 unsafe {
                     if fmadio_slot_process_pkt(tv, slot_next, p) != TM_ECODE_OK {
@@ -303,8 +312,11 @@ pub extern "C" fn fmadio_pkt_acq_loop(
                     fmadio_capture_handle_timeout(tv, p);
                 }
 
-                // Brief sleep to avoid busy-waiting
-                std::thread::sleep(Duration::from_micros(10));
+                // Adaptive backoff: sleep longer when idle, up to max
+                if backoff_us > 0 {
+                    std::thread::sleep(Duration::from_micros(backoff_us));
+                }
+                backoff_us = (backoff_us + BACKOFF_STEP_US).min(BACKOFF_MAX_US);
             }
             Err(ring::FmadioRingError::EndOfStream) => {
                 log_notice("End of stream reached");

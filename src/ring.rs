@@ -148,8 +148,8 @@ pub struct FmadioRingCapture {
     _fd: std::fs::File,
     /// Current read position (entry index)
     read_pos: i64,
-    /// Ring depth (number of entries)
-    depth: u32,
+    /// Ring depth (number of entries) - stored for debugging
+    _depth: u32,
     /// Ring mask for wraparound
     mask: u32,
     /// Packets received
@@ -250,7 +250,7 @@ impl FmadioRingCapture {
             ring_size: map_size,
             _fd: file,
             read_pos: initial_pos,
-            depth,
+            _depth: depth,
             mask,
             packets_received: 0,
             packets_fcs_error: 0,
