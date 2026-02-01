@@ -91,6 +91,11 @@ typedef struct FmadioThreadVars {
    */
   char *ring_path;
   /**
+   * Ring buffer identifier (0-based index from config)
+   * Used to differentiate stats counters between rings
+   */
+  uint32_t ring_id;
+  /**
    * Packets received counter
    */
   uint64_t pkts;

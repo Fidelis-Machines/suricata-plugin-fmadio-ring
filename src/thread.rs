@@ -24,6 +24,10 @@ pub struct FmadioThreadVars {
     /// Ring buffer path (owned C string)
     pub ring_path: *mut libc::c_char,
 
+    /// Ring buffer identifier (0-based index from config)
+    /// Used to differentiate stats counters between rings
+    pub ring_id: u32,
+
     /// Packets received counter
     pub pkts: u64,
 
@@ -54,6 +58,7 @@ impl FmadioThreadVars {
             tv: std::ptr::null_mut(),
             slot: std::ptr::null_mut(),
             ring_path: std::ptr::null_mut(),
+            ring_id: 0,
             pkts: 0,
             bytes: 0,
             drops: 0,

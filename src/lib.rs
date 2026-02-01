@@ -89,6 +89,25 @@ fn log_error(msg: &str) {
     }
 }
 
+/// Extract ring ID from path.
+///
+/// Tries to parse a numeric suffix from the ring path.
+/// For example, "/opt/fmadio/queue/lxc_ring0" returns 0,
+/// "/opt/fmadio/queue/lxc_ring1" returns 1.
+/// Defaults to 0 if no number found.
+fn extract_ring_id(path: &str) -> u32 {
+    // Find the last non-digit character position
+    if let Some(pos) = path.rfind(|c: char| !c.is_ascii_digit()) {
+        // Check if there are digits after it
+        if pos + 1 < path.len() {
+            if let Ok(id) = path[pos + 1..].parse::<u32>() {
+                return id;
+            }
+        }
+    }
+    0
+}
+
 // ============================================================================
 // FFI Exports - Thread Module Callbacks
 // ============================================================================
@@ -128,13 +147,16 @@ pub extern "C" fn fmadio_thread_init(
         }
     };
 
-    log_notice(&format!("Opening FMADIO ring buffer: {}", ring_path));
+    // Extract ring ID from path for unique stats
+    let ring_id = extract_ring_id(ring_path);
+
+    log_notice(&format!("Opening FMADIO ring buffer {}: {}", ring_id, ring_path));
 
     // Open the ring buffer
     let ring = match FmadioRingCapture::open(ring_path, false) {
         Ok(r) => r,
         Err(e) => {
-            log_error(&format!("Failed to open ring buffer: {:?}", e));
+            log_error(&format!("Failed to open ring buffer {}: {:?}", ring_id, e));
             return TM_ECODE_FAILED;
         }
     };
@@ -143,17 +165,24 @@ pub extern "C" fn fmadio_thread_init(
     let mut ptv = Box::new(FmadioThreadVars::new());
     ptv.tv = tv;
     ptv.ring = Box::into_raw(Box::new(ring));
+    ptv.ring_id = ring_id;
 
     // Store ring path
     if let Ok(path_cstr) = std::ffi::CString::new(ring_path) {
         ptv.ring_path = path_cstr.into_raw();
     }
 
-    // Register stats counters
+    // Register stats counters with ring ID for per-ring stats
     unsafe {
-        let name_pkts = std::ffi::CString::new("capture.fmadio_ring.packets").unwrap();
-        let name_bytes = std::ffi::CString::new("capture.fmadio_ring.bytes").unwrap();
-        let name_drops = std::ffi::CString::new("capture.fmadio_ring.drops").unwrap();
+        let name_pkts = std::ffi::CString::new(
+            format!("capture.fmadio_ring{}.packets", ring_id)
+        ).unwrap();
+        let name_bytes = std::ffi::CString::new(
+            format!("capture.fmadio_ring{}.bytes", ring_id)
+        ).unwrap();
+        let name_drops = std::ffi::CString::new(
+            format!("capture.fmadio_ring{}.drops", ring_id)
+        ).unwrap();
 
         ptv.counter_pkts = fmadio_stats_register_counter(name_pkts.as_ptr(), tv);
         ptv.counter_bytes = fmadio_stats_register_counter(name_bytes.as_ptr(), tv);
@@ -165,7 +194,7 @@ pub extern "C" fn fmadio_thread_init(
         *data = Box::into_raw(ptv) as *mut c_void;
     }
 
-    log_notice("FMADIO ring buffer opened successfully");
+    log_notice(&format!("FMADIO ring buffer {} opened successfully", ring_id));
     TM_ECODE_OK
 }
 
@@ -351,8 +380,8 @@ pub extern "C" fn fmadio_thread_deinit(
         // Take ownership and drop
         let ptv = unsafe { Box::from_raw(data as *mut FmadioThreadVars) };
         log_notice(&format!(
-            "FMADIO ring closed: {} packets, {} bytes, {} drops",
-            ptv.pkts, ptv.bytes, ptv.drops
+            "FMADIO ring {} closed: {} packets, {} bytes, {} drops",
+            ptv.ring_id, ptv.pkts, ptv.bytes, ptv.drops
         ));
         // ptv drops here, which closes the ring buffer
     }
@@ -385,7 +414,7 @@ pub extern "C" fn fmadio_thread_exit_print_stats(
     }
 
     log_notice(&format!(
-        "FMADIO Ring stats: pkts={}, bytes={}, drops={}",
-        ptv.pkts, ptv.bytes, ptv.drops
+        "FMADIO Ring {} stats: pkts={}, bytes={}, drops={}",
+        ptv.ring_id, ptv.pkts, ptv.bytes, ptv.drops
     ));
 }

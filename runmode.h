@@ -20,4 +20,17 @@ const char *FmadioRingGetDefaultRunMode(void);
  */
 void FmadioRingRunmodeRegister(int slot);
 
+/**
+ * Get the number of configured ring buffers.
+ * @return Number of rings (0 if none configured)
+ */
+int FmadioRingGetCount(void);
+
+/**
+ * Get a ring buffer path by index.
+ * @param index Ring index (0-based)
+ * @return Ring path, or NULL if index out of range
+ */
+const char *FmadioRingGetPathByIndex(int index);
+
 #endif /* SURICATA_RUNMODE_FMADIO_RING_H */
