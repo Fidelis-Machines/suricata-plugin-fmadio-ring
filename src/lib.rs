@@ -230,19 +230,16 @@ pub extern "C" fn fmadio_pkt_acq_loop(
         fmadio_threads_set_flag(tv, THV_RUNNING);
     }
 
-    log_notice("Starting FMADIO ring packet acquisition loop");
-
     // Main acquisition loop
     loop {
         // Check for shutdown signal
         if unsafe { fmadio_should_stop() } != 0 {
-            log_notice("Received shutdown signal");
             break;
         }
 
         // Check for break loop flag
         if ptv.break_loop {
-            log_notice("Break loop flag set");
+            ptv.break_loop = false; // Reset for next iteration
             break;
         }
 
@@ -330,11 +327,6 @@ pub extern "C" fn fmadio_pkt_acq_loop(
             fmadio_stats_sync_if_signalled(tv);
         }
     }
-
-    log_notice(&format!(
-        "Exiting packet loop: {} packets, {} bytes",
-        ptv.pkts, ptv.bytes
-    ));
 
     TM_ECODE_OK
 }
