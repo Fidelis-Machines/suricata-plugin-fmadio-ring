@@ -235,6 +235,7 @@ pub extern "C" fn fmadio_pkt_acq_loop(
     const BACKOFF_MAX_US: u64 = 1000; // 1ms max
     const BACKOFF_STEP_US: u64 = 100; // increase by 100us each idle iteration
     let mut backoff_us: u64 = BACKOFF_MIN_US;
+    let mut idle_count: u32 = 0;
 
     // Main acquisition loop
     loop {
@@ -293,8 +294,9 @@ pub extern "C" fn fmadio_pkt_acq_loop(
                 ptv.pkts += 1;
                 ptv.bytes += recv_pkt.len as u64;
 
-                // Reset backoff when receiving packets
+                // Reset backoff and idle count when receiving packets
                 backoff_us = BACKOFF_MIN_US;
+                idle_count = 0;
 
                 // Process packet through the pipeline
                 unsafe {
@@ -305,7 +307,20 @@ pub extern "C" fn fmadio_pkt_acq_loop(
                 }
             }
             Ok(None) => {
-                // No packet available - adaptive backoff
+                idle_count += 1;
+
+                // Every 100 idle iterations, do timeout handling
+                if idle_count >= 100 {
+                    idle_count = 0;
+                    let p = unsafe { fmadio_packet_get_from_queue_or_alloc() };
+                    if !p.is_null() {
+                        unsafe {
+                            fmadio_capture_handle_timeout(tv, p);
+                        }
+                    }
+                }
+
+                // Adaptive backoff
                 if backoff_us > 0 {
                     std::thread::sleep(Duration::from_micros(backoff_us));
                 }
