@@ -232,8 +232,8 @@ pub extern "C" fn fmadio_pkt_acq_loop(
 
     // Adaptive backoff: start at 0, increase when idle, reset on packet
     const BACKOFF_MIN_US: u64 = 0;
-    const BACKOFF_MAX_US: u64 = 1000; // 1ms max
-    const BACKOFF_STEP_US: u64 = 100; // increase by 100us each idle iteration
+    const BACKOFF_MAX_US: u64 = 10_000; // 10ms max
+    const BACKOFF_STEP_US: u64 = 500; // increase by 500us each idle iteration
     let mut backoff_us: u64 = BACKOFF_MIN_US;
     let mut idle_count: u32 = 0;
 
