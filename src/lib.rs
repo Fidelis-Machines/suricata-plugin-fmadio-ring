@@ -249,22 +249,20 @@ pub extern "C" fn fmadio_pkt_acq_loop(
             break;
         }
 
-        // Wait for packet pool to have available packets
-        unsafe {
-            fmadio_packet_pool_wait();
-        }
-
-        // Get a packet from the pool
-        let p = unsafe { fmadio_packet_get_from_queue_or_alloc() };
-        if p.is_null() {
-            log_error("Failed to get packet from pool");
-            return TM_ECODE_FAILED;
-        }
-
-        // Try to receive a packet from the ring buffer
+        // Try to receive a packet from the ring buffer first
         let ring = unsafe { ptv.ring_mut() };
         match ring.recv_packet() {
             Ok(Some(recv_pkt)) => {
+                // Got packet - now wait for pool and get a Suricata packet
+                unsafe {
+                    fmadio_packet_pool_wait();
+                }
+                let p = unsafe { fmadio_packet_get_from_queue_or_alloc() };
+                if p.is_null() {
+                    log_error("Failed to get packet from pool");
+                    return TM_ECODE_FAILED;
+                }
+
                 // Set packet source
                 unsafe {
                     fmadio_packet_set_source(p, PKT_SRC_WIRE);
@@ -307,12 +305,7 @@ pub extern "C" fn fmadio_pkt_acq_loop(
                 }
             }
             Ok(None) => {
-                // No packet available, handle timeout
-                unsafe {
-                    fmadio_capture_handle_timeout(tv, p);
-                }
-
-                // Adaptive backoff: sleep longer when idle, up to max
+                // No packet available - adaptive backoff
                 if backoff_us > 0 {
                     std::thread::sleep(Duration::from_micros(backoff_us));
                 }
@@ -320,16 +313,10 @@ pub extern "C" fn fmadio_pkt_acq_loop(
             }
             Err(ring::FmadioRingError::EndOfStream) => {
                 log_notice("End of stream reached");
-                unsafe {
-                    fmadio_return_packet_to_pool(tv, p);
-                }
                 break;
             }
             Err(e) => {
                 log_error(&format!("Ring buffer error: {:?}", e));
-                unsafe {
-                    fmadio_return_packet_to_pool(tv, p);
-                }
                 return TM_ECODE_FAILED;
             }
         }
