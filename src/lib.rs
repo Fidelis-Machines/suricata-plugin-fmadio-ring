@@ -126,7 +126,7 @@ fn extract_ring_id(path: &str) -> u32 {
 /// * `TM_ECODE_OK` on success
 /// * `TM_ECODE_FAILED` on error
 #[no_mangle]
-pub extern "C" fn fmadio_thread_init(
+pub extern "C" fn fmadio_thread_init_internal(
     tv: *mut c_void,
     initdata: *const c_void,
     data: *mut *mut c_void,
@@ -232,8 +232,8 @@ pub extern "C" fn fmadio_pkt_acq_loop(
 
     // Adaptive backoff: start at 0, increase when idle, reset on packet
     const BACKOFF_MIN_US: u64 = 0;
-    const BACKOFF_MAX_US: u64 = 10_000; // 10ms max
-    const BACKOFF_STEP_US: u64 = 500; // increase by 500us each idle iteration
+    const BACKOFF_MAX_US: u64 = 1_000; // 1ms max
+    const BACKOFF_STEP_US: u64 = 100; // increase by 100us each idle iteration
     let mut backoff_us: u64 = BACKOFF_MIN_US;
     let mut idle_count: u32 = 0;
 

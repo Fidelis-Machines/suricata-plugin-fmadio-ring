@@ -6,6 +6,21 @@
 #ifndef SURICATA_SOURCE_FMADIO_RING_H
 #define SURICATA_SOURCE_FMADIO_RING_H
 
+#include "suricata-common.h"
+
+#define FMADIO_RING_IFACE_NAME_LENGTH 128
+
+/**
+ * Interface configuration structure.
+ * Passed to thread init as initdata, similar to PfringIfaceConfig.
+ */
+typedef struct FmadioRingIfaceConfig_ {
+    char iface[FMADIO_RING_IFACE_NAME_LENGTH];  /* Ring path */
+    int threads;                                 /* Number of threads (always 1) */
+    SC_ATOMIC_DECLARE(unsigned int, ref);        /* Reference count */
+    void (*DerefFunc)(void *);                   /* Dereference callback */
+} FmadioRingIfaceConfig;
+
 /**
  * Register the FMADIO Ring receive thread module.
  *

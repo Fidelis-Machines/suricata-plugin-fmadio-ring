@@ -9,6 +9,7 @@
 #include "suricata-plugin.h"
 #include "suricata-common.h"
 #include "util-debug.h"
+#include "util-device.h"
 #include "conf.h"
 
 #include "source.h"
@@ -42,6 +43,16 @@ const char *FmadioRingGetPathByIndex(int index)
         return NULL;
     }
     return fmadio_ring_paths[index];
+}
+
+/**
+ * Register a ring as a live device with Suricata.
+ * @param ring_path Path to the ring buffer
+ */
+static void RegisterRingDevice(const char *ring_path)
+{
+    SCLogNotice("Registering FMADIO Ring device: %s", ring_path);
+    LiveRegisterDevice(ring_path);
 }
 
 /**
@@ -86,6 +97,7 @@ static int ParseFmadioRingConfig(void)
 
         SCLogNotice("Configured FMADIO ring %d: %s", count, ring_path);
         fmadio_ring_paths[count] = ring_path;
+        RegisterRingDevice(ring_path);
         count++;
     }
 
@@ -116,15 +128,18 @@ static void InitCapturePlugin(const char *args, int plugin_slot,
         /* Fallback to command line args (single ring) */
         SCLogNotice("Using ring from --capture-plugin-args: %s", args);
         fmadio_ring_paths[0] = args;
+        RegisterRingDevice(args);
         fmadio_ring_count = 1;
     } else {
         /* Use default path */
-        SCLogNotice("Using default ring path: /opt/fmadio/queue/lxc_ring0");
-        fmadio_ring_paths[0] = "/opt/fmadio/queue/lxc_ring0";
+        const char *default_path = "/opt/fmadio/queue/lxc_ring0";
+        SCLogNotice("Using default ring path: %s", default_path);
+        fmadio_ring_paths[0] = default_path;
+        RegisterRingDevice(default_path);
         fmadio_ring_count = 1;
     }
 
-    /* Register runmodes (workers, single) */
+    /* Register runmodes (workers, single, autofp) */
     FmadioRingRunmodeRegister(plugin_slot);
 
     /* Register thread modules */

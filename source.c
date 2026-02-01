@@ -120,17 +120,43 @@ int fmadio_should_stop(void)
 /* ============================================================================
  * External Rust FFI functions
  * ============================================================================ */
-extern TmEcode fmadio_thread_init(void *tv, const void *initdata, void **data);
+extern TmEcode fmadio_thread_init_internal(void *tv, const void *ring_path, void **data);
 extern TmEcode fmadio_pkt_acq_loop(void *tv, void *data, void *slot);
 extern TmEcode fmadio_pkt_acq_break_loop(void *tv, void *data);
 extern TmEcode fmadio_thread_deinit(void *tv, void *data);
 extern void fmadio_thread_exit_print_stats(void *tv, void *data);
 
 /**
+ * Receive thread initialization wrapper.
+ * Extracts ring path from config and passes to Rust init.
+ */
+static TmEcode ReceiveFmadioRingThreadInit(ThreadVars *tv, const void *initdata, void **data)
+{
+    FmadioRingIfaceConfig *conf = (FmadioRingIfaceConfig *)initdata;
+
+    if (conf == NULL) {
+        SCLogError("No configuration provided");
+        SCReturnInt(TM_ECODE_FAILED);
+    }
+
+    SCLogDebug("ReceiveFmadioRingThreadInit for %s", conf->iface);
+
+    /* Call Rust init with the ring path */
+    TmEcode ret = fmadio_thread_init_internal(tv, conf->iface, data);
+
+    /* Dereference the config (it may be freed if this is the last reference) */
+    if (conf->DerefFunc != NULL) {
+        conf->DerefFunc(conf);
+    }
+
+    return ret;
+}
+
+/**
  * Decode thread initialization.
  * Allocates DecodeThreadVars and registers performance counters.
  */
-static TmEcode DecodeFmadioRingThreadInit(ThreadVars *tv, const void *initdata, void **data)
+static TmEcode DecodeFmadioRingThreadInit(ThreadVars *tv, const void *initdata __attribute__((unused)), void **data)
 {
     SCLogDebug("DecodeFmadioRingThreadInit");
 
@@ -189,7 +215,7 @@ void TmModuleReceiveFmadioRingRegister(int slot)
     SCLogDebug("Registering ReceiveFmadioRing in slot %d", slot);
 
     tmm_modules[slot].name = "ReceiveFmadioRing";
-    tmm_modules[slot].ThreadInit = (TmEcode (*)(ThreadVars *, const void *, void **))fmadio_thread_init;
+    tmm_modules[slot].ThreadInit = ReceiveFmadioRingThreadInit;
     tmm_modules[slot].Func = NULL;  /* Not used for receive modules */
     tmm_modules[slot].PktAcqLoop = (TmEcode (*)(ThreadVars *, void *, void *))fmadio_pkt_acq_loop;
     tmm_modules[slot].PktAcqBreakLoop = (TmEcode (*)(ThreadVars *, void *))fmadio_pkt_acq_break_loop;

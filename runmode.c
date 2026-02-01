@@ -9,17 +9,11 @@
 #include "tm-threads.h"
 #include "util-affinity.h"
 #include "util-device.h"
+#include "util-runmodes.h"
+#include "util-time.h"
 
 #include "runmode.h"
 #include "source.h"
-
-/* Thread name prefixes */
-static const char *fmadio_thread_name_single = "RxFmadioRing";
-static const char *fmadio_thread_name_workers = "W#FmadioRing";
-
-/* External functions to get ring configuration from plugin.c */
-extern int FmadioRingGetCount(void);
-extern const char *FmadioRingGetPathByIndex(int index);
 
 /**
  * Get the default runmode for FMADIO Ring capture.
@@ -30,60 +24,85 @@ const char *FmadioRingGetDefaultRunMode(void)
 }
 
 /**
- * Create a worker thread for a specific ring buffer.
- *
- * @param ring_path Path to the ring buffer
- * @param ring_id Ring identifier (0-based index)
- * @param thread_prefix Thread name prefix
- * @return 0 on success, -1 on failure
+ * Dereference and free config structure.
  */
-static int CreateRingThread(const char *ring_path, int ring_id,
-                            const char *thread_prefix)
+static void FmadioRingDerefConfig(void *conf)
 {
-    if (ring_path == NULL) {
-        SCLogError("Ring path is NULL for ring %d", ring_id);
-        return -1;
+    FmadioRingIfaceConfig *pfconf = (FmadioRingIfaceConfig *)conf;
+    if (SC_ATOMIC_SUB(pfconf->ref, 1) == 1) {
+        SCFree(pfconf);
+    }
+}
+
+/**
+ * Parse interface configuration.
+ * Called by RunModeSetLiveCapture* for each device.
+ *
+ * @param iface Ring buffer path (device name)
+ * @return Allocated config structure, or NULL on error
+ */
+static void *ParseFmadioRingConfig(const char *iface)
+{
+    if (iface == NULL) {
+        SCLogError("Interface name is NULL");
+        return NULL;
     }
 
-    char thread_name[TM_THREAD_NAME_MAX];
-    snprintf(thread_name, sizeof(thread_name), "%s%d", thread_prefix, ring_id);
-
-    SCLogNotice("Creating thread '%s' for ring: %s", thread_name, ring_path);
-
-    ThreadVars *tv = TmThreadCreatePacketHandler(thread_name,
-            "packetpool", "packetpool",
-            "packetpool", "packetpool",
-            "pktacqloop");
-    if (tv == NULL) {
-        SCLogError("TmThreadCreatePacketHandler failed for ring %d", ring_id);
-        return -1;
+    FmadioRingIfaceConfig *conf = SCMalloc(sizeof(*conf));
+    if (unlikely(conf == NULL)) {
+        SCLogError("Failed to allocate FMADIO Ring config");
+        return NULL;
     }
 
-    TmModule *tm_module = TmModuleGetByName("ReceiveFmadioRing");
-    if (tm_module == NULL) {
-        FatalError("TmModuleGetByName failed for ReceiveFmadioRing");
+    memset(conf, 0, sizeof(*conf));
+    strlcpy(conf->iface, iface, sizeof(conf->iface));
+    conf->threads = 1;  /* Always 1 thread per ring */
+    conf->DerefFunc = FmadioRingDerefConfig;
+    SC_ATOMIC_INIT(conf->ref);
+    (void)SC_ATOMIC_ADD(conf->ref, 1);
+
+    SCLogDebug("Parsed config for interface: %s", iface);
+    return conf;
+}
+
+/**
+ * Get thread count for a device.
+ * Always returns 1 - each ring gets exactly one thread.
+ *
+ * @param conf Config structure
+ * @return Number of threads (always 1)
+ */
+static int FmadioRingGetThreadsCount(void *conf)
+{
+    FmadioRingIfaceConfig *pfconf = (FmadioRingIfaceConfig *)conf;
+    return pfconf->threads;
+}
+
+/**
+ * AutoFP runmode.
+ * Multi-threaded mode where packets from each flow are assigned to
+ * a single detect thread.
+ */
+static int RunModeAutoFp(void)
+{
+    SCEnter();
+    int ret;
+
+    TimeModeSetLive();
+
+    ret = RunModeSetLiveCaptureAutoFp(
+            ParseFmadioRingConfig,
+            FmadioRingGetThreadsCount,
+            "ReceiveFmadioRing",
+            "DecodeFmadioRing",
+            thread_name_autofp,
+            NULL);
+
+    if (ret != 0) {
+        FatalError("FMADIO Ring autofp runmode failed");
     }
-    /* Pass ring_path as initdata to the thread module */
-    TmSlotSetFuncAppend(tv, tm_module, (void *)ring_path);
 
-    tm_module = TmModuleGetByName("DecodeFmadioRing");
-    if (tm_module == NULL) {
-        FatalError("TmModuleGetByName failed for DecodeFmadioRing");
-    }
-    TmSlotSetFuncAppend(tv, tm_module, NULL);
-
-    tm_module = TmModuleGetByName("FlowWorker");
-    if (tm_module == NULL) {
-        FatalError("TmModuleGetByName failed for FlowWorker");
-    }
-    TmSlotSetFuncAppend(tv, tm_module, NULL);
-
-    TmThreadSetCPU(tv, WORKER_CPU_SET);
-
-    if (TmThreadSpawn(tv) != TM_ECODE_OK) {
-        FatalError("TmThreadSpawn failed for ring %d", ring_id);
-    }
-
+    SCLogNotice("FMADIO Ring autofp runmode initialized");
     return 0;
 }
 
@@ -93,21 +112,24 @@ static int CreateRingThread(const char *ring_path, int ring_id,
  */
 static int RunModeSingle(void)
 {
-    int ring_count = FmadioRingGetCount();
-    if (ring_count == 0) {
-        SCLogError("No FMADIO rings configured");
-        return -1;
+    SCEnter();
+    int ret;
+
+    TimeModeSetLive();
+
+    ret = RunModeSetLiveCaptureSingle(
+            ParseFmadioRingConfig,
+            FmadioRingGetThreadsCount,
+            "ReceiveFmadioRing",
+            "DecodeFmadioRing",
+            thread_name_single,
+            NULL);
+
+    if (ret != 0) {
+        FatalError("FMADIO Ring single runmode failed");
     }
 
-    SCLogNotice("Running FMADIO Ring in single mode with %d ring(s)", ring_count);
-
-    for (int i = 0; i < ring_count; i++) {
-        const char *ring_path = FmadioRingGetPathByIndex(i);
-        if (CreateRingThread(ring_path, i, fmadio_thread_name_single) != 0) {
-            return -1;
-        }
-    }
-
+    SCLogNotice("FMADIO Ring single runmode initialized");
     return 0;
 }
 
@@ -118,21 +140,24 @@ static int RunModeSingle(void)
  */
 static int RunModeWorkers(void)
 {
-    int ring_count = FmadioRingGetCount();
-    if (ring_count == 0) {
-        SCLogError("No FMADIO rings configured");
-        return -1;
+    SCEnter();
+    int ret;
+
+    TimeModeSetLive();
+
+    ret = RunModeSetLiveCaptureWorkers(
+            ParseFmadioRingConfig,
+            FmadioRingGetThreadsCount,
+            "ReceiveFmadioRing",
+            "DecodeFmadioRing",
+            thread_name_workers,
+            NULL);
+
+    if (ret != 0) {
+        FatalError("FMADIO Ring workers runmode failed");
     }
 
-    SCLogNotice("Running FMADIO Ring in workers mode with %d ring(s)", ring_count);
-
-    for (int i = 0; i < ring_count; i++) {
-        const char *ring_path = FmadioRingGetPathByIndex(i);
-        if (CreateRingThread(ring_path, i, fmadio_thread_name_workers) != 0) {
-            return -1;
-        }
-    }
-
+    SCLogNotice("FMADIO Ring workers runmode initialized");
     return 0;
 }
 
@@ -142,6 +167,10 @@ static int RunModeWorkers(void)
 void FmadioRingRunmodeRegister(int slot)
 {
     SCLogDebug("Registering FMADIO Ring runmodes in slot %d", slot);
+
+    RunModeRegisterNewRunMode(slot, "autofp",
+            "Multi-threaded FMADIO Ring mode with auto flow pinning",
+            RunModeAutoFp, NULL);
 
     RunModeRegisterNewRunMode(slot, "single",
             "Single threaded FMADIO Ring mode",
