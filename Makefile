@@ -33,7 +33,7 @@ RUST_LIB := $(RUST_TARGET_DIR)/libsuricata_fmadio_ring.a
 
 # Output
 PLUGIN_NAME := fmadio-ring.so
-PLUGIN_DIR ?= /usr/lib/suricata/plugins
+PLUGIN_DIR ?= /opt/suricata/lib
 
 # Source files
 C_SOURCES := plugin.c source.c runmode.c

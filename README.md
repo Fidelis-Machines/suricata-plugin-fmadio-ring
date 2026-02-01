@@ -41,20 +41,35 @@ cd /path/to/suricata
 
 # Then build the plugin
 cd /path/to/suricata-plugin-fmadio-ring
-SURICATA_SRC=/path/to/suricata make
+make SURICATA_SRC=/path/to/suricata
+```
+
+### Build Options
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `SURICATA_SRC` | `/development/suricata` | Path to Suricata source tree |
+| `PLUGIN_DIR` | `/opt/suricata/lib` | Installation directory |
+| `CC` | `gcc` | C compiler |
+| `CARGO` | `cargo` | Rust build tool |
+
+Example with custom paths:
+
+```bash
+make SURICATA_SRC=/home/user/suricata PLUGIN_DIR=/usr/local/lib/suricata
 ```
 
 ## Installation
 
 ```bash
 sudo make install
-# Installs to /usr/lib/suricata/plugins/fmadio-ring.so
+# Installs to /opt/suricata/lib/fmadio-ring.so
 ```
 
 Or install to a custom location:
 
 ```bash
-make install DESTDIR=/opt/suricata PLUGIN_DIR=/lib/plugins
+make install PLUGIN_DIR=/usr/lib/suricata/plugins
 ```
 
 ## Configuration
@@ -65,12 +80,18 @@ Add the plugin to your Suricata configuration:
 
 ```yaml
 plugins:
-  - /usr/lib/suricata/plugins/fmadio-ring.so
+  - /opt/suricata/lib/fmadio-ring.so
+```
 
-# Optional: FMADIO-specific settings (future)
-# fmadio-ring:
-#   - interface: /opt/fmadio/queue/lxc_ring0
-#     threads: 1
+### Multiple Ring Buffers
+
+Configure multiple ring buffers in `suricata.yaml` (one worker thread per ring):
+
+```yaml
+fmadio-ring:
+  - ring: /opt/fmadio/queue/lxc_ring0
+  - ring: /opt/fmadio/queue/lxc_ring1
+  - ring: /opt/fmadio/queue/lxc_ring2
 ```
 
 ### Command Line
@@ -78,10 +99,18 @@ plugins:
 Run Suricata with the FMADIO Ring capture plugin:
 
 ```bash
+# Single ring via command line
 suricata --capture-plugin fmadio-ring \
          --capture-plugin-args "/opt/fmadio/queue/lxc_ring0" \
          -c /etc/suricata/suricata.yaml
+
+# Multiple rings via YAML (no --capture-plugin-args needed)
+suricata --capture-plugin fmadio-ring \
+         -c /etc/suricata/suricata.yaml
 ```
+
+**Priority**: YAML configuration takes precedence over `--capture-plugin-args`.
+If no configuration is found, defaults to `/opt/fmadio/queue/lxc_ring0`.
 
 ## Ring Buffer Format
 
@@ -100,13 +129,24 @@ Each packet entry contains:
 
 ## Statistics
 
-The plugin registers the following counters:
+The plugin registers per-ring counters (where `N` is the ring ID extracted from the path):
 
-- `capture.fmadio_ring.packets` - Packets received
-- `capture.fmadio_ring.bytes` - Bytes received
-- `capture.fmadio_ring.drops` - Packets dropped
+- `capture.fmadio_ringN.packets` - Packets received
+- `capture.fmadio_ringN.bytes` - Bytes received
+- `capture.fmadio_ringN.drops` - Packets dropped
 
-View with: `suricatasc -c "dump-counters"`
+For example, with rings `lxc_ring0` and `lxc_ring1`:
+
+```
+capture.fmadio_ring0.packets
+capture.fmadio_ring0.bytes
+capture.fmadio_ring0.drops
+capture.fmadio_ring1.packets
+capture.fmadio_ring1.bytes
+capture.fmadio_ring1.drops
+```
+
+View with: `suricatasc -c "dump-counters" | grep fmadio`
 
 ## Development
 
