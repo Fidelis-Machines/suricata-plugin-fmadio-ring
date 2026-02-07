@@ -61,7 +61,27 @@ static void *ParseFmadioRingConfig(const char *iface)
     SC_ATOMIC_INIT(conf->ref);
     (void)SC_ATOMIC_ADD(conf->ref, 1);
 
-    SCLogDebug("Parsed config for interface: %s", iface);
+    /* Resolve short name back to full ring path */
+    int ring_count = FmadioRingGetCount();
+    for (int i = 0; i < ring_count; i++) {
+        const char *path = FmadioRingGetPathByIndex(i);
+        if (path != NULL) {
+            /* Compare against the filename component of the path */
+            const char *name = strrchr(path, '/');
+            name = (name != NULL) ? name + 1 : path;
+            if (strcmp(name, iface) == 0) {
+                conf->ring_path = path;
+                break;
+            }
+        }
+    }
+
+    if (conf->ring_path == NULL) {
+        /* iface might be the full path itself */
+        conf->ring_path = iface;
+    }
+
+    SCLogDebug("Parsed config for interface: %s (path: %s)", iface, conf->ring_path);
     return conf;
 }
 

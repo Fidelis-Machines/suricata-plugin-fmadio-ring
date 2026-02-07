@@ -57,6 +57,10 @@ extern "C" {
     // Slot navigation
     fn fmadio_get_slot_next(slot: *mut c_void) -> *mut c_void;
 
+    // LiveDevice
+    fn fmadio_live_get_device(name: *const c_char) -> *mut c_void;
+    fn fmadio_packet_set_livedev(p: *mut c_void, dev: *mut c_void);
+
     // Logging
     fn fmadio_log_notice(msg: *const c_char);
     fn fmadio_log_error(msg: *const c_char);
@@ -128,22 +132,31 @@ fn extract_ring_id(path: &str) -> u32 {
 #[no_mangle]
 pub extern "C" fn fmadio_thread_init_internal(
     tv: *mut c_void,
-    initdata: *const c_void,
+    ring_path_ptr: *const c_void,
+    dev_name_ptr: *const c_void,
     data: *mut *mut c_void,
 ) -> c_int {
-    // Get ring path from initdata (passed as capture-plugin-args)
-    let ring_path = if initdata.is_null() {
-        // Default path
+    // Get ring path
+    let ring_path = if ring_path_ptr.is_null() {
         "/opt/fmadio/queue/lxc_ring0"
     } else {
         unsafe {
-            match CStr::from_ptr(initdata as *const c_char).to_str() {
+            match CStr::from_ptr(ring_path_ptr as *const c_char).to_str() {
                 Ok(s) => s,
                 Err(_) => {
                     log_error("Invalid ring path encoding");
                     return TM_ECODE_FAILED;
                 }
             }
+        }
+    };
+
+    // Get short device name (for LiveGetDevice lookup)
+    let dev_name = if dev_name_ptr.is_null() {
+        None
+    } else {
+        unsafe {
+            CStr::from_ptr(dev_name_ptr as *const c_char).to_str().ok()
         }
     };
 
@@ -170,6 +183,18 @@ pub extern "C" fn fmadio_thread_init_internal(
     // Store ring path
     if let Ok(path_cstr) = std::ffi::CString::new(ring_path) {
         ptv.ring_path = path_cstr.into_raw();
+    }
+
+    // Look up LiveDevice by short name (enables in_iface in EVE logs)
+    if let Some(name) = dev_name {
+        if let Ok(c_name) = std::ffi::CString::new(name) {
+            unsafe {
+                ptv.livedev = fmadio_live_get_device(c_name.as_ptr());
+                if ptv.livedev.is_null() {
+                    log_error(&format!("LiveGetDevice failed for '{}'", name));
+                }
+            }
+        }
     }
 
     // Register stats counters with ring ID for per-ring stats
@@ -264,9 +289,12 @@ pub extern "C" fn fmadio_pkt_acq_loop(
                     return TM_ECODE_FAILED;
                 }
 
-                // Set packet source
+                // Set packet source and live device (for in_iface in EVE logs)
                 unsafe {
                     fmadio_packet_set_source(p, PKT_SRC_WIRE);
+                    if !ptv.livedev.is_null() {
+                        fmadio_packet_set_livedev(p, ptv.livedev);
+                    }
                 }
 
                 // Set datalink type (Ethernet)

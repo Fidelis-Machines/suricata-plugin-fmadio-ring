@@ -15,7 +15,8 @@
  * Passed to thread init as initdata, similar to PfringIfaceConfig.
  */
 typedef struct FmadioRingIfaceConfig_ {
-    char iface[FMADIO_RING_IFACE_NAME_LENGTH];  /* Ring path */
+    char iface[FMADIO_RING_IFACE_NAME_LENGTH];  /* Short device name (e.g., lxc_ring0) */
+    const char *ring_path;                       /* Full ring path (e.g., /opt/fmadio/queue/lxc_ring0) */
     int threads;                                 /* Number of threads (always 1) */
     SC_ATOMIC_DECLARE(unsigned int, ref);        /* Reference count */
     void (*DerefFunc)(void *);                   /* Dereference callback */

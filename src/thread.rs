@@ -48,6 +48,9 @@ pub struct FmadioThreadVars {
 
     /// Flag to signal loop should break
     pub break_loop: bool,
+
+    /// Suricata LiveDevice pointer (opaque, for setting p->livedev)
+    pub livedev: *mut c_void,
 }
 
 impl FmadioThreadVars {
@@ -66,6 +69,7 @@ impl FmadioThreadVars {
             counter_bytes: 0,
             counter_drops: 0,
             break_loop: false,
+            livedev: std::ptr::null_mut(),
         }
     }
 

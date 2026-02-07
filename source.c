@@ -11,6 +11,7 @@
 #include "tm-threads.h"
 #include "packet.h"
 #include "decode.h"
+#include "util-device.h"
 
 #include "source.h"
 
@@ -111,6 +112,17 @@ void fmadio_stats_sync_if_signalled(ThreadVars *tv)
     StatsSyncCountersIfSignalled(tv);
 }
 
+/* LiveDevice wrappers */
+LiveDevice *fmadio_live_get_device(const char *name)
+{
+    return LiveGetDevice(name);
+}
+
+void fmadio_packet_set_livedev(Packet *p, LiveDevice *dev)
+{
+    p->livedev = dev;
+}
+
 /* Control flag wrapper */
 int fmadio_should_stop(void)
 {
@@ -120,7 +132,7 @@ int fmadio_should_stop(void)
 /* ============================================================================
  * External Rust FFI functions
  * ============================================================================ */
-extern TmEcode fmadio_thread_init_internal(void *tv, const void *ring_path, void **data);
+extern TmEcode fmadio_thread_init_internal(void *tv, const void *ring_path, const void *dev_name, void **data);
 extern TmEcode fmadio_pkt_acq_loop(void *tv, void *data, void *slot);
 extern TmEcode fmadio_pkt_acq_break_loop(void *tv, void *data);
 extern TmEcode fmadio_thread_deinit(void *tv, void *data);
@@ -139,10 +151,10 @@ static TmEcode ReceiveFmadioRingThreadInit(ThreadVars *tv, const void *initdata,
         SCReturnInt(TM_ECODE_FAILED);
     }
 
-    SCLogDebug("ReceiveFmadioRingThreadInit for %s", conf->iface);
+    SCLogDebug("ReceiveFmadioRingThreadInit for %s (path: %s)", conf->iface, conf->ring_path);
 
-    /* Call Rust init with the ring path */
-    TmEcode ret = fmadio_thread_init_internal(tv, conf->iface, data);
+    /* Call Rust init with the full ring path and short device name */
+    TmEcode ret = fmadio_thread_init_internal(tv, conf->ring_path, conf->iface, data);
 
     /* Dereference the config (it may be freed if this is the last reference) */
     if (conf->DerefFunc != NULL) {

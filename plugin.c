@@ -46,13 +46,27 @@ const char *FmadioRingGetPathByIndex(int index)
 }
 
 /**
+ * Get the short device name from a ring path.
+ * Returns the filename component (e.g., "lxc_ring0" from "/opt/fmadio/queue/lxc_ring0").
+ * @param ring_path Full path to the ring buffer
+ * @return Pointer to the filename component within ring_path
+ */
+static const char *GetRingShortName(const char *ring_path)
+{
+    const char *name = strrchr(ring_path, '/');
+    return (name != NULL) ? name + 1 : ring_path;
+}
+
+/**
  * Register a ring as a live device with Suricata.
+ * Uses the filename component as the device name.
  * @param ring_path Path to the ring buffer
  */
 static void RegisterRingDevice(const char *ring_path)
 {
-    SCLogNotice("Registering FMADIO Ring device: %s", ring_path);
-    LiveRegisterDevice(ring_path);
+    const char *short_name = GetRingShortName(ring_path);
+    SCLogNotice("Registering FMADIO Ring device: %s (path: %s)", short_name, ring_path);
+    LiveRegisterDevice(short_name);
 }
 
 /**
